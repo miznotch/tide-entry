@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>As We Are</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=Work+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: #ffffff; color: #111111;
+    font-family: 'Work Sans', system-ui, sans-serif;
+  }
+  #tide { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 2;
+    padding: 28px 40px;
+  }
+  .wordmark {
+    display: inline-block;
+    font-family: 'Cormorant Garamond', serif; font-size: 28px;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    background: #ffffff; padding: 4px 12px;
+  }
+  main {
+    position: fixed; inset: 0; z-index: 2;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  #enter {
+    pointer-events: auto;
+    background: #ffffff; color: #111111;
+    border: 1.5px solid #111111; border-radius: 999px; padding: 12px 36px;
+    font: 500 13px 'Work Sans', system-ui, sans-serif;
+    letter-spacing: 0.32em; text-transform: uppercase; cursor: pointer;
+    transition: background 0.3s, color 0.3s;
+  }
+  #enter:hover, #enter:focus-visible { background: #111111; color: #ffffff; outline: none; }
+  #missing {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 3;
+    display: none; background: #fff3cd; color: #5c4400; border: 1px solid #d6b656;
+    padding: 10px 16px; border-radius: 6px; font-size: 13px;
+  }
+  @media (max-width: 600px) {
+    header { padding: 20px; }
+    .wordmark { font-size: 20px; }
+  }
+</style>
+</head>
+<body>
+  <canvas id="tide" aria-hidden="true"></canvas>
+
+  <header>
+    <div class="wordmark">As We Are</div>
+  </header>
+
+  <main>
+    <button id="enter">Enter</button>
+  </main>
+
+  <div id="missing">Couldn't find the image. Put it in this folder and name it lines.jpg (or change IMAGE_FILE in the code).</div>
+
+<script>
+/* ============ SETTINGS ============ */
+const IMAGE_FILE  = 'lines.jpg'; // your art, in the same folder as this page
+const TIDE_HEIGHT = 10;          // how far the lines rise and fall, in pixels
+const TIDE_SPEED  = 0.6;         // how fast the tide moves (higher = faster)
+const WAVE_LENGTH = 0.004;       // smaller = longer, gentler swells
+const STRIP_WIDTH = 3;           // slice width in pixels; smaller = smoother but slower
+/* ================================== */
+
+const canvas = document.getElementById('tide');
+const ctx = canvas.getContext('2d');
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const dpr = window.devicePixelRatio || 1;
+let W = 0, H = 0;
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+resize();
+window.addEventListener('resize', () => { resize(); if (reduceMotion) drawTide(0); });
+
+const art = new Image();
+art.src = IMAGE_FILE;
+
+// The tide: the image is cut into thin vertical strips, and each strip is
+// nudged up or down by a slow wave, so the lines seem to swell like water.
+function drawTide(time) {
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, W, H);
+
+  // "Cover" sizing: fill the screen, with a little extra so edges never show
+  const scale = Math.max(W / art.width, H / art.height) * 1.08;
+  const drawW = art.width * scale, drawH = art.height * scale;
+  const left = (W - drawW) / 2, top = (H - drawH) / 2;
+
+  for (let x = 0; x < W; x += STRIP_WIDTH) {
+    const sourceX = (x - left) / scale;
+    const sourceW = Math.min(STRIP_WIDTH / scale, art.width - sourceX);
+    if (sourceW <= 0) break;
+
+    const swell =
+      Math.sin(x * WAVE_LENGTH + time * TIDE_SPEED) +
+      0.5 * Math.sin(x * WAVE_LENGTH * 2.7 - time * TIDE_SPEED * 0.7);
+
+    ctx.drawImage(art, sourceX, 0, sourceW, art.height,
+                  x, top + swell * TIDE_HEIGHT, STRIP_WIDTH + 0.5, drawH);
+  }
+}
+
+function loop(ms) {
+  drawTide(ms / 1000);
+  requestAnimationFrame(loop);
+}
+
+art.onload = () => {
+  if (reduceMotion) drawTide(0);
+  else requestAnimationFrame(loop);
+};
+art.onerror = () => { document.getElementById('missing').style.display = 'block'; };
+
+// Enter: the parting comes in the next step
+document.getElementById('enter').addEventListener('click', () => {
+  console.log('Enter clicked: parting not built yet');
+});
+</script>
+</body>
+</html>
