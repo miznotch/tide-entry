@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>As We Are</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=Work+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: #ffffff; color: #111111;
+    font-family: 'Work Sans', system-ui, sans-serif;
+  }
+  #site {
+    position: fixed; inset: 0; z-index: 0;
+    background: #111111; color: #ffffff;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Cormorant Garamond', serif; font-size: 22px; font-style: italic;
+  }
+  #tide { position: fixed; inset: 0; z-index: 1; width: 100%; height: 100%; display: block; }
+  #ui { transition: opacity 0.4s; }
+  #ui.gone { opacity: 0; pointer-events: none; }
+  header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 2;
+    padding: 28px 40px;
+  }
+  .wordmark {
+    display: inline-block;
+    font-family: 'Cormorant Garamond', serif; font-size: 28px;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    background: #ffffff; padding: 4px 12px;
+  }
+  main {
+    position: fixed; inset: 0; z-index: 2;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  #enter {
+    pointer-events: auto;
+    background: #ffffff; color: #111111;
+    border: 1.5px solid #111111; border-radius: 999px; padding: 12px 36px;
+    font: 500 13px 'Work Sans', system-ui, sans-serif;
+    letter-spacing: 0.32em; text-transform: uppercase; cursor: pointer;
+    transition: background 0.3s, color 0.3s;
+  }
+  #enter:hover, #enter:focus-visible { background: #111111; color: #ffffff; outline: none; }
+  #ui.gone #enter, #ui.gone #riveButton { pointer-events: none; }
+  #riveButton {
+    display: none; pointer-events: auto; cursor: pointer;
+    width: 240px; height: 100px;
+  }
+  #missing {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 3;
+    display: none; background: #fff3cd; color: #5c4400; border: 1px solid #d6b656;
+    padding: 10px 16px; border-radius: 6px; font-size: 13px;
+  }
+  @media (max-width: 600px) {
+    header { padding: 20px; }
+    .wordmark { font-size: 20px; }
+  }
+</style>
+</head>
+<body>
+  <!-- What the parting reveals. Only seen until HOME_URL loads. -->
+  <div id="site">Main site loads here</div>
+
+  <canvas id="tide" aria-hidden="true"></canvas>
+
+  <div id="ui">
+    <header>
+      <div class="wordmark">As We Are</div>
+    </header>
+    <main>
+      <button id="enter">Enter</button>
+      <!-- The Rive button shows here instead, if button.riv is in the folder -->
+      <canvas id="riveButton" aria-label="Enter" role="button" tabindex="0"></canvas>
+    </main>
+  </div>
+
+  <div id="missing">Couldn't find the image. Put it in this folder and name it lines.jpg (or change IMAGE_FILE in the code).</div>
+
+<script>
+/* ============ SETTINGS ============ */
+const IMAGE_FILE  = 'lines.jpg'; // your art, in the same folder as this page
+const BUTTON_FILE = 'button.riv';// optional Rive button; if missing, the plain Enter button is used
+const HOME_URL    = '';          // where Enter goes after the parting (your Squarespace address). Empty = stay here
+
+// Calm (tide)
+const TIDE_HEIGHT = 10;          // how far the lines rise and fall, in pixels
+const TIDE_SPEED  = 0.6;         // how fast the tide moves
+const WAVE_LENGTH = 0.004;       // smaller = longer, gentler swells
+const STRIP_WIDTH = 3;           // slice width in pixels; smaller = smoother but slower
+
+// Active (parting)
+const SURGE       = 2.5;         // how much bigger the swells get when Enter is clicked
+const SURGE_TIME  = 0.35;        // seconds of surge before the lines start to part
+const PART_TIME   = 1.3;         // seconds for the lines to slide fully open
+const BANDS       = 8;           // number of horizontal bands that part at slightly different times
+const STAGGER     = 0.25;        // max delay between bands, in seconds
+/* ================================== */
+
+const canvas = document.getElementById('tide');
+const ctx = canvas.getContext('2d');
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const dpr = window.devicePixelRatio || 1;
+let W = 0, H = 0;
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+resize();
+window.addEventListener('resize', () => { resize(); if (reduceMotion) drawTide(0, 1, []); });
+
+const art = new Image();
+art.src = IMAGE_FILE;
+
+// Each band gets its own random delay so the curtain opens unevenly, like fabric
+const bandDelay = Array.from({ length: BANDS }, () => Math.random() * STAGGER);
+
+function ease(x) {
+  x = Math.max(0, Math.min(1, x));
+  return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+}
+
+// The tide: the image is cut into thin vertical strips, each nudged up or down
+// by a slow wave. For the parting, it is also cut into horizontal bands, and each
+// band's left half slides left while its right half slides right.
+function drawTide(time, swellSize, bandOpen) {
+  ctx.clearRect(0, 0, W, H);
+
+  const scale = Math.max(W / art.width, H / art.height) * 1.08;
+  const drawW = art.width * scale, drawH = art.height * scale;
+  const left = (W - drawW) / 2, top = (H - drawH) / 2;
+  const half = W / 2;
+  const bandH = H / BANDS;
+
+  for (let b = 0; b < BANDS; b++) {
+    const open = bandOpen[b] || 0;
+    if (open >= 1) continue;
+    const slide = open * (half + 60);
+    const y0 = b * bandH;
+
+    // White paper behind the lines, sliding with its half
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(-slide, y0 - 0.5, half + 1, bandH + 1);
+    ctx.fillRect(half - 1 + slide, y0 - 0.5, half + 1, bandH + 1);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, y0 - 0.5, W, bandH + 1);
+    ctx.clip();
+
+    for (let x = 0; x < W; x += STRIP_WIDTH) {
+      const sourceX = (x - left) / scale;
+      const sourceW = Math.min(STRIP_WIDTH / scale, art.width - sourceX);
+      if (sourceW <= 0) break;
+
+      const swell =
+        Math.sin(x * WAVE_LENGTH + time * TIDE_SPEED) +
+        0.5 * Math.sin(x * WAVE_LENGTH * 2.7 - time * TIDE_SPEED * 0.7);
+
+      const shift = x < half ? -slide : slide;
+      ctx.drawImage(art, sourceX, 0, sourceW, art.height,
+                    x + shift, top + swell * TIDE_HEIGHT * swellSize, STRIP_WIDTH + 0.5, drawH);
+    }
+    ctx.restore();
+  }
+}
+
+let entering = false, enterStart = 0, swellNow = 1, done = false;
+
+function loop(ms) {
+  const time = ms / 1000;
+  let bandOpen = [];
+
+  if (entering) {
+    const since = time - enterStart;
+    swellNow += (SURGE - swellNow) * 0.08;
+    bandOpen = bandDelay.map(d => ease((since - SURGE_TIME - d) / PART_TIME));
+    if (!done && since > SURGE_TIME + STAGGER + PART_TIME) {
+      done = true;
+      if (HOME_URL) goHome();
+    }
+  }
+
+  drawTide(time, swellNow, bandOpen);
+  if (!done) requestAnimationFrame(loop);
+}
+
+function goHome() {
+  const url = new URL(HOME_URL, window.location.href).href;
+  try { window.top.location.href = url; }
+  catch (e) { window.location.href = url; }
+}
+
+art.onload = () => {
+  if (reduceMotion) drawTide(0, 1, []);
+  else requestAnimationFrame(loop);
+};
+art.onerror = () => { document.getElementById('missing').style.display = 'block'; };
+
+function enter() {
+  if (entering) return;
+  document.getElementById('ui').classList.add('gone');
+  if (reduceMotion) {
+    ctx.clearRect(0, 0, W, H);
+    if (HOME_URL) goHome();
+    return;
+  }
+  entering = true;
+  enterStart = performance.now() / 1000;
+}
+document.getElementById('enter').addEventListener('click', enter);
+
+/* ---------- Optional Rive button ---------- */
+fetch(BUTTON_FILE, { method: 'HEAD' }).then(res => {
+  if (!res.ok) return;
+  const script = document.createElement('script');
+  script.src = 'https://unpkg.com/@rive-app/canvas';
+  script.onload = () => {
+    const holder = document.getElementById('riveButton');
+    const r = new rive.Rive({
+      src: BUTTON_FILE,
+      canvas: holder,
+      autoplay: false,
+      layout: new rive.Layout({ fit: rive.Fit.Contain }),
+      onLoad: () => {
+        // Swap: show the Rive button, hide the plain one
+        document.getElementById('enter').style.display = 'none';
+        holder.style.display = 'block';
+        r.resizeDrawingSurfaceToCanvas();
+        // Play its state machine if it has one (for hover and press), otherwise its animation
+        if (r.stateMachineNames.length) r.play(r.stateMachineNames[0]);
+        else if (r.animationNames.length) r.play(r.animationNames[0]);
+      },
+      onLoadError: () => { holder.style.display = 'none'; }
+    });
+    holder.addEventListener('click', () => setTimeout(enter, 250)); // brief pause so its press animation can show
+    holder.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') enter(); });
+  };
+  document.head.appendChild(script);
+}).catch(() => {});
+</script>
+</body>
+</html>
